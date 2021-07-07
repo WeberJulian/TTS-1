@@ -61,7 +61,7 @@ def mozilla_de(root_path, meta_file):
 
 def mailabs(root_path, meta_files=None):
     """Normalizes M-AI-Labs meta data files to TTS format"""
-    speaker_regex = re.compile("by_book/(male|female)/(?P<speaker_name>[^/]+)/")
+    speaker_regex = re.compile("by_book/(male|female|mix)/(?P<speaker_name>[^/]+)/")
     if meta_files is None:
         csv_files = glob(root_path + "/**/metadata.csv", recursive=True)
     else:
@@ -88,7 +88,7 @@ def mailabs(root_path, meta_files=None):
                     text = cols[1].strip()
                     items.append([text, wav_file, speaker_name])
                 else:
-                    raise RuntimeError("> File %s does not exist!" % (wav_file))
+                    print("> File %s does not exist!" % (wav_file))
     return items
 
 
@@ -155,15 +155,20 @@ def ruslan(root_path, meta_file):
 
 def css10(root_path, meta_file):
     """Normalizes the CSS10 dataset file to TTS format"""
-    txt_file = os.path.join(root_path, meta_file)
+    meta_file = os.path.join(root_path, "transcript.txt")
     items = []
-    speaker_name = "ljspeech"
-    with open(txt_file, "r") as ttf:
+    counter_missing_files = 0
+    speaker = "CSS10_" + meta_file.split('/')[-2] # taking the langauge in the path
+    with open(meta_file, "r") as ttf:
         for line in ttf:
-            cols = line.split("|")
-            wav_file = os.path.join(root_path, cols[0])
-            text = cols[1]
-            items.append([text, wav_file, speaker_name])
+            wav, _, text, _ = line.split("|")
+            wav = os.path.join(root_path, wav)
+            if os.path.isfile(wav):
+                items.append([text, wav, speaker])
+            else:
+                counter_missing_files += 1
+    if counter_missing_files != 0:
+        print("> %s files are missing!" % (counter_missing_files))
     return items
 
 
@@ -202,16 +207,20 @@ def libri_tts(root_path, meta_files=None):
     items = []
     if meta_files is None:
         meta_files = glob(f"{root_path}/**/*trans.tsv", recursive=True)
+    else:
+        if isinstance(meta_files, str):
+            meta_files = [os.path.join(root_path, meta_files)]
+
     for meta_file in meta_files:
         _meta_file = os.path.basename(meta_file).split(".")[0]
-        speaker_name = _meta_file.split("_")[0]
-        chapter_id = _meta_file.split("_")[1]
-        _root_path = os.path.join(root_path, f"{speaker_name}/{chapter_id}")
         with open(meta_file, "r") as ttf:
             for line in ttf:
                 cols = line.split("\t")
-                wav_file = os.path.join(_root_path, cols[0] + ".wav")
-                text = cols[1]
+                file_name = cols[0]
+                speaker_name, chapter_id, *_ = cols[0].split("_")
+                _root_path = os.path.join(root_path, f"{speaker_name}/{chapter_id}")
+                wav_file = os.path.join(_root_path, file_name + ".wav")
+                text = cols[2]
                 items.append([text, wav_file, "LTTS_" + speaker_name])
     for item in items:
         assert os.path.exists(item[1]), f" [!] wav files don't exist - {item[1]}"
@@ -248,8 +257,12 @@ def brspeech(root_path, meta_file):
             cols = line.split("|")
             wav_file = os.path.join(root_path, cols[0])
             text = cols[2]
-            speaker_name = cols[3]
+            # remove blank spaces and break line from speaker name
+            speaker_name = cols[3].replace("\n", "").replace(" ", "")
             items.append([text, wav_file, speaker_name])
+    for item in items:
+        if not os.path.exists(item[1]):
+            print(f" [!] wav files don't exist - {item[1]}")
     return items
 
 
@@ -285,6 +298,22 @@ def vctk_slim(root_path, meta_files=None, wavs_path="wav48"):
         wav_file = os.path.join(root_path, wavs_path, speaker_id, file_id + ".wav")
         items.append([None, wav_file, "VCTK_" + speaker_id])
 
+    return items
+
+
+def mls(root_path, meta_files=None):
+    """http://www.openslr.org/94/"""
+    items = []
+    with open(os.path.join(root_path, meta_files), "r") as meta:
+        for line in meta:
+            file, text = line.split('\t')
+            text = text[:-1]
+            speaker, book, *_ = file.split('_')
+            wav_file = os.path.join(root_path, os.path.dirname(meta_files), 'audio', speaker, book, file + ".wav")
+            items.append([text, wav_file, "MLS_" + speaker])
+    for item in items:
+        if not os.path.exists(item[1]):
+            print(f" [!] wav files don't exist - {item[1]}")
     return items
 
 
