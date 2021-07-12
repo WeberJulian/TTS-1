@@ -259,3 +259,6 @@ class BaseTrainingConfig(Coqpit):
     # distributed
     distributed_backend: str = "nccl"
     distributed_url: str = "tcp://localhost:54321"
+    # samplers
+    language_weighted_sampler: bool = False
+    speaker_weighted_sampler: bool = False

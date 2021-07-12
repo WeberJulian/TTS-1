@@ -13,6 +13,7 @@ from TTS.tts.utils.speakers import SpeakerManager, get_speaker_manager
 from TTS.tts.utils.synthesis import synthesis
 from TTS.tts.utils.text import make_symbols
 from TTS.tts.utils.visual import plot_alignment, plot_spectrogram
+from TTS.utils.samplers import get_weighted_sampler, get_perfect_language_sampler
 from TTS.utils.audio import AudioProcessor
 
 # pylint: skip-file
@@ -188,6 +189,10 @@ class BaseTTS(BaseModel):
             dataset.sort_items()
 
             sampler = DistributedSampler(dataset) if num_gpus > 1 else None
+            if (config.language_weighted_sampler or config.speaker_weighted_sampler) and sampler is None and not is_eval:
+                print("Using weighted sampler")
+                sampler = get_weighted_sampler(dataset, config.speaker_weighted_sampler, config.language_weighted_sampler)
+
             loader = DataLoader(
                 dataset,
                 batch_size=config.eval_batch_size if is_eval else config.batch_size,
