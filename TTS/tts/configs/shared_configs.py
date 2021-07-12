@@ -182,3 +182,5 @@ class BaseTTSConfig(BaseTrainingConfig):
     use_speaker_embedding: bool = False
     use_d_vector_file: bool = False
     d_vector_dim: int = 0
+    # multi-lingual
+    use_language_embedding: bool = False
