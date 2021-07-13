@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from coqpit import Coqpit
 
+
 class LanguageManager:
     """Manage the languages for multi-language 🐸TTS models. Load a datafile and parse the information
     in a way that can be queried by language or clip.
@@ -133,7 +134,9 @@ def save_language_mapping(out_path, language_mapping):
             json.dump(language_mapping, f, indent=4)
 
 
-def get_language_manager(c: Coqpit, data: List = None, restore_path: str = None, out_path: str = None) -> LanguageManager:
+def get_language_manager(
+    c: Coqpit, data: List = None, restore_path: str = None, out_path: str = None
+) -> LanguageManager:
     """Initiate a `LanguageManager` instance by the provided config.
 
     Args:

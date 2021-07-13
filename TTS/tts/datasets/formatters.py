@@ -158,7 +158,7 @@ def css10(root_path, meta_file):
     meta_file = os.path.join(root_path, "transcript.txt")
     items = []
     counter_missing_files = 0
-    speaker = "CSS10_" + meta_file.split('/')[-2] # taking the langauge in the path
+    speaker = "CSS10_" + meta_file.split("/")[-2]  # taking the langauge in the path
     with open(meta_file, "r") as ttf:
         for line in ttf:
             wav, _, text, _ = line.split("|")
@@ -306,10 +306,10 @@ def mls(root_path, meta_files=None):
     items = []
     with open(os.path.join(root_path, meta_files), "r") as meta:
         for line in meta:
-            file, text = line.split('\t')
+            file, text = line.split("\t")
             text = text[:-1]
-            speaker, book, *_ = file.split('_')
-            wav_file = os.path.join(root_path, os.path.dirname(meta_files), 'audio', speaker, book, file + ".wav")
+            speaker, book, *_ = file.split("_")
+            wav_file = os.path.join(root_path, os.path.dirname(meta_files), "audio", speaker, book, file + ".wav")
             items.append([text, wav_file, "MLS_" + speaker])
     for item in items:
         if not os.path.exists(item[1]):

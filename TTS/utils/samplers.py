@@ -1,6 +1,7 @@
-import torch
 import numpy as np
-from torch.utils.data.sampler import Sampler, WeightedRandomSampler, SubsetRandomSampler
+import torch
+from torch.utils.data.sampler import Sampler, SubsetRandomSampler, WeightedRandomSampler
+
 
 def get_weighted_sampler(dataset, speaker_weighted_sampler, language_weighted_sampler):
     if speaker_weighted_sampler:
@@ -11,7 +12,7 @@ def get_weighted_sampler(dataset, speaker_weighted_sampler, language_weighted_sa
         # count number samples by speaker/language
         speaker_count = np.array([len(np.where(speaker_names == s)[0]) for s in unique_speaker_names])
         # create weight
-        weight_speaker = 1. / speaker_count
+        weight_speaker = 1.0 / speaker_count
         samples_weight = np.array([weight_speaker[s] for s in speaker_ids])
 
     if language_weighted_sampler:
@@ -19,7 +20,7 @@ def get_weighted_sampler(dataset, speaker_weighted_sampler, language_weighted_sa
         unique_language_names = np.unique(language_names).tolist()
         language_ids = [unique_language_names.index(l) for l in language_names]
         language_count = np.array([len(np.where(language_names == l)[0]) for l in unique_language_names])
-        weight_language = 1. / language_count
+        weight_language = 1.0 / language_count
         if speaker_weighted_sampler:
             samples_weight += np.array([weight_language[l] for l in language_ids])
         else:
@@ -29,17 +30,23 @@ def get_weighted_sampler(dataset, speaker_weighted_sampler, language_weighted_sa
     # create sampler
     return WeightedRandomSampler(dataset_samples_weight, len(dataset_samples_weight))
 
+
 def get_perfect_language_sampler(dataset, c, is_val):
-    assert not getattr(c, "gradual_training", False), 'batch size must be constant to use perfect sampler'
-    return PerfectBatchSampler(dataset, getattr(c, "eval_batch_size")) if is_val else PerfectBatchSampler(dataset, getattr(c, "batch_size"))
+    assert not getattr(c, "gradual_training", False), "batch size must be constant to use perfect sampler"
+    return (
+        PerfectBatchSampler(dataset, getattr(c, "eval_batch_size"))
+        if is_val
+        else PerfectBatchSampler(dataset, getattr(c, "batch_size"))
+    )
+
 
 class PerfectBatchSampler(Sampler):
     """Samples a mini-batch of indices for the grouped ConvolutionalEncoder.
     For L samples languages and batch size B produces a mini-batch with
 
-    samples of a particular language L_i (random regardless speaker) 
+    samples of a particular language L_i (random regardless speaker)
     on the indices (into the mini-batch) i + k * L for k from 0 to B // L.
-    
+
     Thus can be easily reshaped to a tensor of shape [B // L, L * C, ...]
     with groups consistent with languages.
 
@@ -52,13 +59,12 @@ class PerfectBatchSampler(Sampler):
 
         languages = np.unique(np.array([item[3] for item in dataset.items])).tolist()
 
-        assert batch_size % len(languages) == 0, (
-            'Batch size must be divisible by number of languages.')
+        assert batch_size % len(languages) == 0, "Batch size must be divisible by number of languages."
 
         label_indices = {}
         for idx in range(len(dataset)):
             label = dataset.items[idx][3]
-            if label not in label_indices: 
+            if label not in label_indices:
                 label_indices[label] = []
             label_indices[label].append(idx)
 
@@ -68,11 +74,11 @@ class PerfectBatchSampler(Sampler):
         self.prepared_batch = []
 
     def __iter__(self):
-        
+
         batch = []
         iters = [iter(s) for s in self._samplers]
         done = False
-        
+
         while True:
             b = []
             for it in iters:
@@ -81,12 +87,13 @@ class PerfectBatchSampler(Sampler):
                     done = True
                     break
                 b.append(idx)
-            if done: break
+            if done:
+                break
             batch += b
             if len(batch) == self._batch_size:
                 yield batch
                 batch = []
-        
+
     def __len__(self):
         language_batch_size = self._batch_size // len(self._samplers)
         return min(((len(s) + language_batch_size - 1) // language_batch_size) for s in self._samplers)
