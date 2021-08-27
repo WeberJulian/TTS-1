@@ -158,7 +158,10 @@ def remove_silence(filepath):
     frames = list(frames)
     segments = vad_collector(sample_rate, 30, padding_duration_ms, vad, frames)
     flag = False
-    if len(list(segments)):
+    segments = list(segments)
+    num_segments = len(segments)
+
+    if num_segments != 0:
         for i, segment in reversed(list(enumerate(segments))):
             if i >= 1:
                 if flag == False:
@@ -170,6 +173,7 @@ def remove_silence(filepath):
                 if flag:
                     segment = segment + concat_segment
                 write_wave(output_path, segment, sample_rate)
+                print(output_path)
                 return True
     else:
         print("> Just Copying the file to:", output_path)
