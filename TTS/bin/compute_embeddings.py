@@ -1,9 +1,11 @@
 import argparse
 import os
-from argparse import RawTextHelpFormatter
+from pathlib import Path
 
 from tqdm import tqdm
 
+from glob import glob
+from argparse import RawTextHelpFormatter
 from TTS.config import load_config
 from TTS.tts.datasets import load_meta_data
 from TTS.tts.utils.speakers import SpeakerManager
@@ -23,25 +25,30 @@ parser.add_argument(
     help="Path to model config file.",
 )
 
-parser.add_argument(
-    "config_dataset_path",
-    type=str,
-    help="Path to dataset config file.",
-)
 parser.add_argument("output_path", type=str, help="path for output speakers.json and/or speakers.npy.")
 parser.add_argument("--use_cuda", type=bool, help="flag to set cuda.", default=True)
 parser.add_argument("--eval", type=bool, help="compute eval.", default=True)
+parser.add_argument(
+    "--config_dataset_path",
+    type=str,
+    help="Path to dataset config file.",
+)
+parser.add_argument(
+    "--wav_folder_path",
+    type=str,
+    help="Path to wav folder (each sample is considered a speaker).",
+)
 
 args = parser.parse_args()
 
-c_dataset = load_config(args.config_dataset_path)
-
-meta_data_train, meta_data_eval = load_meta_data(c_dataset.datasets, eval_split=args.eval)
-wav_files = meta_data_train + meta_data_eval
-
-speaker_manager = SpeakerManager(
-    encoder_model_path=args.model_path, encoder_config_path=args.config_path, use_cuda=args.use_cuda
-)
+if args.config_dataset_path:
+    c_dataset = load_config(args.config_dataset_path)
+    meta_data_train, meta_data_eval = load_meta_data(c_dataset.datasets, eval_split=args.eval)
+    wav_files = meta_data_train + meta_data_eval
+elif args.wav_folder_path:
+    wav_files = glob(os.path.join(args.wav_folder_path, "**/*.wav"), recursive=True)
+    wav_files = [[None, path, Path(path).stem] for path in wav_files]
+speaker_manager = SpeakerManager(encoder_model_path=args.model_path, encoder_config_path=args.config_path, use_cuda=args.use_cuda)
 
 # compute speaker embeddings
 speaker_mapping = {}
