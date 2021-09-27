@@ -899,7 +899,7 @@ class Trainer:
     def _restore_best_loss(self):
         """Restore the best loss from the args.best_path if provided else
         from the model (`args.restore_path` or `args.continue_path`) used for resuming the training"""
-        if self.restore_step != 0 or self.args.best_path:
+        if self.restore_step != 0 and self.args.best_path:
             print(" > Restoring best loss from " f"{os.path.basename(self.args.best_path)} ...")
             ch = load_fsspec(self.args.restore_path, map_location="cpu")
             if "model_loss" in ch:
@@ -923,9 +923,9 @@ class Trainer:
             self.c_logger.print_epoch_start(epoch, self.config.epochs, self.output_path)
             self.train_epoch()
             if self.config.run_eval:
-                self.eval_epoch()
+                pass #self.eval_epoch()
             if epoch >= self.config.test_delay_epochs and self.args.rank <= 0:
-                self.test_run()
+                pass #self.test_run()
             self.c_logger.print_epoch_end(
                 epoch, self.keep_avg_eval.avg_values if self.config.run_eval else self.keep_avg_train.avg_values
             )

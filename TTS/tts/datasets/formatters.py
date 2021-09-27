@@ -32,7 +32,7 @@ def mozilla(root_path, meta_file, **kwargs):  # pylint: disable=unused-argument
     """Normalizes Mozilla meta data files to TTS format"""
     txt_file = os.path.join(root_path, meta_file)
     items = []
-    speaker_name = "mozilla"
+    speaker_name = os.path.basename(os.path.normpath(root_path))
     with open(txt_file, "r") as ttf:
         for line in ttf:
             cols = line.split("|")
