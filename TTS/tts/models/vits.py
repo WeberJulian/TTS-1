@@ -20,6 +20,7 @@ from TTS.tts.datasets.dataset import TTSDataset, _parse_sample
 from TTS.tts.layers.glow_tts.duration_predictor import DurationPredictor
 from TTS.tts.layers.vits.discriminator import VitsDiscriminator
 from TTS.tts.layers.vits.networks import PosteriorEncoder, ResidualCouplingBlocks, TextEncoder
+from TTS.tts.layers.vits.prosodic_encoder import ProsodicEncoder
 from TTS.tts.layers.vits.stochastic_duration_predictor import StochasticDurationPredictor
 from TTS.tts.models.base_tts import BaseTTS
 from TTS.tts.utils.helpers import generate_path, maximum_path, rand_segments, segment, sequence_mask
@@ -667,6 +668,14 @@ class Vits(BaseTTS):
             conv_post_bias=False,
         )
 
+        self.prosodic_encoder = ProsodicEncoder(
+            self.args.hidden_channels,
+            192,
+            16,
+            5,
+            1,
+        )
+
         if self.args.init_discriminator:
             self.disc = VitsDiscriminator(
                 periods=self.args.periods_multi_period_discriminator,
@@ -863,7 +872,7 @@ class Vits(BaseTTS):
         attn_durations = attn.sum(3)
         if self.args.use_sdp:
             loss_duration = self.duration_predictor(
-                x.detach() if self.args.detach_dp_input else x,
+                x,
                 x_mask,
                 attn_durations,
                 g=g.detach() if self.args.detach_dp_input and g is not None else g,
@@ -873,7 +882,7 @@ class Vits(BaseTTS):
         else:
             attn_log_durations = torch.log(attn_durations + 1e-6) * x_mask
             log_durations = self.duration_predictor(
-                x.detach() if self.args.detach_dp_input else x,
+                x,
                 x_mask,
                 g=g.detach() if self.args.detach_dp_input and g is not None else g,
                 lang_emb=lang_emb.detach() if self.args.detach_dp_input and lang_emb is not None else lang_emb,
@@ -964,6 +973,10 @@ class Vits(BaseTTS):
         # flow layers
         z_p = self.flow(z, y_mask, g=g)
 
+        prosodic_encoding, prosodic_kl = self.prosodic_encoder(z_p)
+        x = x.detach()
+        x += prosodic_encoding.unsqueeze(-1).expand_as(x)
+
         # duration predictor
         outputs, attn = self.forward_mas(outputs, z_p, m_p, logs_p, x, x_mask, y_mask, g=g, lang_emb=lang_emb)
 
@@ -1016,6 +1029,7 @@ class Vits(BaseTTS):
                 "gt_spk_emb": gt_spk_emb,
                 "syn_spk_emb": syn_spk_emb,
                 "slice_ids": slice_ids,
+                "prosodic_kl": prosodic_kl,
             }
         )
         return outputs
@@ -1263,6 +1277,7 @@ class Vits(BaseTTS):
                     use_speaker_encoder_as_loss=self.args.use_speaker_encoder_as_loss,
                     gt_spk_emb=self.model_outputs_cache["gt_spk_emb"],
                     syn_spk_emb=self.model_outputs_cache["syn_spk_emb"],
+                    prosodic_kl=self.model_outputs_cache["prosodic_kl"],
                 )
 
             return self.model_outputs_cache, loss_dict
