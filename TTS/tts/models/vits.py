@@ -847,9 +847,10 @@ class Vits(BaseTTS):
         g = speaker_ids if speaker_ids is not None else d_vectors
         return g
 
-    def forward_mas(self, outputs, z_p, m_p, logs_p, x, x_mask, y_mask, g, lang_emb):
+    def forward_mas(self, outputs, z_p, m_p, x_mask, y_mask, g, lang_emb):
         # find the alignment path
         attn_mask = torch.unsqueeze(x_mask, -1) * torch.unsqueeze(y_mask, 2)
+        logs_p = torch.ones_like(m_p)
         with torch.no_grad():
             o_scale = torch.exp(-2 * logs_p)
             logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - logs_p, [1]).unsqueeze(-1)  # [b, t, 1]
@@ -863,7 +864,7 @@ class Vits(BaseTTS):
         attn_durations = attn.sum(3)
         if self.args.use_sdp:
             loss_duration = self.duration_predictor(
-                x.detach() if self.args.detach_dp_input else x,
+                m_p.detach() if self.args.detach_dp_input else m_p,
                 x_mask,
                 attn_durations,
                 g=g.detach() if self.args.detach_dp_input and g is not None else g,
@@ -873,7 +874,7 @@ class Vits(BaseTTS):
         else:
             attn_log_durations = torch.log(attn_durations + 1e-6) * x_mask
             log_durations = self.duration_predictor(
-                x.detach() if self.args.detach_dp_input else x,
+                m_p.detach() if self.args.detach_dp_input else m_p,
                 x_mask,
                 g=g.detach() if self.args.detach_dp_input and g is not None else g,
                 lang_emb=lang_emb.detach() if self.args.detach_dp_input and lang_emb is not None else lang_emb,
@@ -956,23 +957,22 @@ class Vits(BaseTTS):
         if self.args.use_language_embedding and lid is not None:
             lang_emb = self.emb_l(lid).unsqueeze(-1)
 
-        x, m_p, logs_p, x_mask = self.text_encoder(x, x_lengths, lang_emb=lang_emb)
+        _, m_p, _, x_mask = self.text_encoder(x, x_lengths, lang_emb=lang_emb)
 
         # posterior encoder
-        z, m_q, logs_q, y_mask = self.posterior_encoder(y, y_lengths, g=g)
+        _, m_q, _, y_mask = self.posterior_encoder(y, y_lengths, g=g)
 
         # flow layers
-        z_p = self.flow(z, y_mask, g=g)
+        z_p = self.flow(m_q, y_mask, g=g)
 
         # duration predictor
-        outputs, attn = self.forward_mas(outputs, z_p, m_p, logs_p, x, x_mask, y_mask, g=g, lang_emb=lang_emb)
+        outputs, attn = self.forward_mas(outputs, z_p, m_p, x_mask, y_mask, g=g, lang_emb=lang_emb)
 
         # expand prior
         m_p = torch.einsum("klmn, kjm -> kjn", [attn, m_p])
-        logs_p = torch.einsum("klmn, kjm -> kjn", [attn, logs_p])
 
         # select a random feature segment for the waveform decoder
-        z_slice, slice_ids = rand_segments(z, y_lengths, self.spec_segment_size, let_short_samples=True, pad_short=True)
+        z_slice, slice_ids = rand_segments(m_q, y_lengths, self.spec_segment_size, let_short_samples=True, pad_short=True)
 
         # interpolate z if needed
         z_slice, spec_segment_size, slice_ids, _ = self.upsampling_z(z_slice, slice_ids=slice_ids)
@@ -1007,11 +1007,9 @@ class Vits(BaseTTS):
                 "model_outputs": o,
                 "alignments": attn.squeeze(1),
                 "m_p": m_p,
-                "logs_p": logs_p,
-                "z": z,
+                "z": m_q,
                 "z_p": z_p,
                 "m_q": m_q,
-                "logs_q": logs_q,
                 "waveform_seg": wav_seg,
                 "gt_spk_emb": gt_spk_emb,
                 "syn_spk_emb": syn_spk_emb,
@@ -1060,11 +1058,11 @@ class Vits(BaseTTS):
         if self.args.use_language_embedding and lid is not None:
             lang_emb = self.emb_l(lid).unsqueeze(-1)
 
-        x, m_p, logs_p, x_mask = self.text_encoder(x, x_lengths, lang_emb=lang_emb)
+        _, m_p, _, x_mask = self.text_encoder(x, x_lengths, lang_emb=lang_emb)
 
         if self.args.use_sdp:
             logw = self.duration_predictor(
-                x,
+                m_p,
                 x_mask,
                 g=g if self.args.condition_dp_on_speaker else None,
                 reverse=True,
@@ -1073,7 +1071,7 @@ class Vits(BaseTTS):
             )
         else:
             logw = self.duration_predictor(
-                x, x_mask, g=g if self.args.condition_dp_on_speaker else None, lang_emb=lang_emb
+                m_p, x_mask, g=g if self.args.condition_dp_on_speaker else None, lang_emb=lang_emb
             )
 
         w = torch.exp(logw) * x_mask * self.length_scale
@@ -1084,10 +1082,8 @@ class Vits(BaseTTS):
         attn_mask = x_mask * y_mask.transpose(1, 2)  # [B, 1, T_enc] * [B, T_dec, 1]
         attn = generate_path(w_ceil.squeeze(1), attn_mask.squeeze(1).transpose(1, 2))
 
-        m_p = torch.matmul(attn.transpose(1, 2), m_p.transpose(1, 2)).transpose(1, 2)
-        logs_p = torch.matmul(attn.transpose(1, 2), logs_p.transpose(1, 2)).transpose(1, 2)
 
-        z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * self.inference_noise_scale
+        z_p = torch.matmul(attn.transpose(1, 2), m_p.transpose(1, 2)).transpose(1, 2)
         z = self.flow(z_p, y_mask, g=g, reverse=True)
 
         # upsampling if needed
@@ -1101,8 +1097,6 @@ class Vits(BaseTTS):
             "durations": w_ceil,
             "z": z,
             "z_p": z_p,
-            "m_p": m_p,
-            "logs_p": logs_p,
             "y_mask": y_mask,
         }
         return outputs
@@ -1252,9 +1246,7 @@ class Vits(BaseTTS):
                     mel_slice_hat=mel_slice.float(),
                     mel_slice=mel_slice_hat.float(),
                     z_p=self.model_outputs_cache["z_p"].float(),
-                    logs_q=self.model_outputs_cache["logs_q"].float(),
                     m_p=self.model_outputs_cache["m_p"].float(),
-                    logs_p=self.model_outputs_cache["logs_p"].float(),
                     z_len=spec_lens,
                     scores_disc_fake=scores_disc_fake,
                     feats_disc_fake=feats_disc_fake,
